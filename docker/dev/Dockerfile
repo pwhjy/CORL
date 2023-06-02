@@ -10,6 +10,41 @@ ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES},display
 # change apt source
 RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list
 
+RUN apt clean && \
+    apt update -y && \
+    apt install -y \
+    build-essential \
+    sudo \
+    locales \
+    rsync \
+    vim \
+    git \
+    wget \
+    curl \
+    zsh \
+    sqlite3 \
+    net-tools \
+    redis \
+    alien libaio1 unixodbc \
+    tmux \
+    netcat \
+    sysstat \
+    iftop \
+    htop \
+    fping \
+    multitail \
+    python3-dev \
+    python3-pip \
+    python3-pyqt5 \
+    graphviz \
+    chrpath \
+    libfuse2 \
+    openssh-server \
+    cmake \
+    qt5-default \
+    libqt5svg5-dev \
+    libpulse0
+
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY installers /tmp/installers
