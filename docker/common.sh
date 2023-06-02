@@ -1,6 +1,6 @@
 #export IMG=pwh12/offlinerl:latest 
 if [ -z $DOCKER_NAME ]; then
-  DOCKER_NAME="${USER}_CORL_dev"
+  DOCKER_NAME="${USER}_corl_dev"
 fi
 export DOCKER_NAME
-export IMG=CORL/CORL_dev:latest
+export IMG=corl/corl_dev:latest
