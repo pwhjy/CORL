@@ -1,6 +1,29 @@
 FROM nvidia/cuda:11.3.0-runtime-ubuntu20.04
 WORKDIR /workspace
 
+WORKDIR /tmp
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES},display
+
+# change apt source
+RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list
+
+RUN locale-gen en_US.UTF-8
+
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+COPY installers /tmp/installers
+COPY skel /tmp/skel
+RUN bash /tmp/installers/install_skel.sh
+RUN bash /tmp/installers/install_ssh.sh
+RUN python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+COPY NotoSerifCJK-Regular.ttc /usr/share/fonts/NotoSerifCJK-Regular.ttc
+
+RUN fc-cache -vf
+
 # python, dependencies for mujoco-py, from https://github.com/openai/mujoco-py
 RUN apt-get update -q \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -36,4 +59,4 @@ COPY requirements/requirements.txt requirements.txt
 # RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 # RUN python -c "import mujoco_py"
 
-COPY . /workspace/CORL/
+# COPY . /workspace/CORL/
