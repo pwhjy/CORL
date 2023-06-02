@@ -10,8 +10,6 @@ ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES},display
 # change apt source
 RUN sed -i s@/archive.ubuntu.com/@/mirrors.aliyun.com/@g /etc/apt/sources.list
 
-RUN locale-gen en_US.UTF-8
-
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY installers /tmp/installers
@@ -27,6 +25,7 @@ RUN fc-cache -vf
 # python, dependencies for mujoco-py, from https://github.com/openai/mujoco-py
 RUN apt-get update -q \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    locale \
     python3-pip \
     build-essential \
     patchelf \
@@ -45,6 +44,8 @@ RUN apt-get update -q \
     xserver-xorg-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8
 
 RUN ln -s /usr/bin/python3 /usr/bin/python
 # installing mujoco distr
