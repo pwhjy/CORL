@@ -19,7 +19,7 @@ function local_volumes() {
            -v /tmp/.X11-unix:/tmp/.X11-unix \
            -v /dev/input:/dev/input"
 
-  volumes="${volumes} -v ${LOCAL_DIR}:/offlinerl_root"
+  volumes="${volumes} -v ${LOCAL_DIR}:/CORL_root"
 
   echo "${volumes}"
 }
@@ -101,9 +101,9 @@ eval docker create -it \
       $(local_volumes) \
       --ulimit core=-1 \
       --dns=114.114.114.114 \
-      --add-host offlinerl_docker:127.0.0.1 \
+      --add-host CORL_docker:127.0.0.1 \
       --add-host ${LOCAL_HOST}:127.0.0.1 \
-      --hostname in_offlinerl_docker \
+      --hostname in_CORL_docker \
       -v ${DOCKER_PATH}/entrypoint.sh:/tmp/entrypoint.sh \
       --entrypoint /tmp/entrypoint.sh \
       -v /etc/localtime:/etc/localtime:ro \
@@ -120,6 +120,6 @@ docker cp -L ~/.gitconfig ${DOCKER_NAME}:${DOCKER_HOME}/.gitconfig
 docker start ${DOCKER_NAME}
 echo "docker started"
 # check_port
-docker exec ${DOCKER_NAME} /bin/bash -c "ln -s -f /offlinerl_root/offlinerl /"
-docker exec ${DOCKER_NAME} chown ${USER_ID}:${GRP_ID} /offlinerl
+docker exec ${DOCKER_NAME} /bin/bash -c "ln -s -f /CORL_root/CORL /"
+docker exec ${DOCKER_NAME} chown ${USER_ID}:${GRP_ID} /CORL
 

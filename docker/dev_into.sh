@@ -10,6 +10,6 @@ docker exec \
     -e COLORTERM=$COLORTERM \
     -e DISPLAY=${DISPLAY} \
     -u $USER \
-    -it -w /offlinerl_root $DOCKER_NAME \
+    -it -w /CORL_root $DOCKER_NAME \
     env LANG=C.UTF-8 \
     /bin/$SHELL
