@@ -33,7 +33,7 @@ ENV LD_LIBRARY_PATH /root/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
 
 # installing poetry & env setup, mujoco_py compilation
 COPY requirements/requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 RUN python -c "import mujoco_py"
 
 COPY . /workspace/CORL/
