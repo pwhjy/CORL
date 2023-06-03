@@ -48,7 +48,10 @@ RUN apt clean && \
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY installers /tmp/installers
-COPY skel /tmp/skel
+# COPY skel /tmp/skel
+COPY skel.tar.gz skel.tar.gz \
+    && tar -xf mujoco.tar.gz -C /tmp/skel \
+    && rm mujoco.tar.gz
 RUN bash /tmp/installers/install_skel.sh
 RUN bash /tmp/installers/install_ssh.sh
 RUN python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
