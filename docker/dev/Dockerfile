@@ -89,15 +89,15 @@ RUN locale-gen en_US.UTF-8
 #     && tar -xf mujoco.tar.gz -C /root/.mujoco \
 #     && rm mujoco.tar.gz
 
-# 如果下载不下来
-RUN mkdir -p /root/.mujoco
+# 这里的intern需要替换成你自己的用户
+RUN mkdir -p /home/intern/.mujoco
 
 COPY mujoco.tar.gz mujoco.tar.gz
 
-RUN tar -xf mujoco.tar.gz -C /root/.mujoco \
+RUN tar -xf mujoco.tar.gz -C /home/intern/.mujoco \
     && rm mujoco.tar.gz
 
-ENV LD_LIBRARY_PATH /root/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH /home/intern/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
 
 # installing poetry & env setup, mujoco_py compilation
 COPY requirements/requirements.txt requirements.txt
