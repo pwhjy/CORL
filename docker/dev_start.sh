@@ -1,6 +1,6 @@
 #!/bin/bash
 DOCKER_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 
 source $DOCKER_PATH/common.sh
@@ -103,7 +103,7 @@ eval docker create -it \
       --dns=114.114.114.114 \
       --add-host CORL_docker:127.0.0.1 \
       --add-host ${LOCAL_HOST}:127.0.0.1 \
-      --hostname in_CORL_docker \
+      --hostname offlinerl \
       -v ${DOCKER_PATH}/entrypoint.sh:/tmp/entrypoint.sh \
       --entrypoint /tmp/entrypoint.sh \
       -v /etc/localtime:/etc/localtime:ro \
