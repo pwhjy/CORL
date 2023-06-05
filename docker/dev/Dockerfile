@@ -1,5 +1,7 @@
 FROM nvidia/cuda:11.3.0-runtime-ubuntu20.04
-WORKDIR /workspace
+# WORKDIR /workspace
+# 这里需要把user改为当前电脑的用户名
+ARG user=intern
 
 WORKDIR /tmp
 
@@ -89,15 +91,15 @@ RUN locale-gen en_US.UTF-8
 #     && tar -xf mujoco.tar.gz -C /root/.mujoco \
 #     && rm mujoco.tar.gz
 
-# 这里的intern需要替换成你自己的用户
-RUN mkdir -p /home/intern/.mujoco
+# 如果下载不下来
+RUN mkdir -p /home/${user}/.mujoco
 
 COPY mujoco.tar.gz mujoco.tar.gz
 
-RUN tar -xf mujoco.tar.gz -C /home/intern/.mujoco \
+RUN tar -xf mujoco.tar.gz -C /home/${user}/.mujoco \
     && rm mujoco.tar.gz
 
-ENV LD_LIBRARY_PATH /home/intern/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH /home/${user}/.mujoco/mujoco210/bin:${LD_LIBRARY_PATH}
 
 # installing poetry & env setup, mujoco_py compilation
 COPY requirements/requirements.txt requirements.txt
