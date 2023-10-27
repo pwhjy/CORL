@@ -1,9 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import asdict, dataclass
 import os
-from pathlib import Path
 import random
 import uuid
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import d4rl
 import gym
@@ -212,13 +212,12 @@ def keep_best_trajectories(
             reward_scale = 1.0
 
     sort_ord = np.argsort(returns, axis=0)[::-1].reshape(-1)
-    top_trajs = sort_ord[: int(frac * len(sort_ord))]
+    top_trajs = sort_ord[: max(1, int(frac * len(sort_ord)))]
 
     order = []
     for i in top_trajs:
         order += ids_by_trajectories[i]
     order = np.array(order)
-
     dataset["observations"] = dataset["observations"][order]
     dataset["actions"] = dataset["actions"][order]
     dataset["next_observations"] = dataset["next_observations"][order]
@@ -250,7 +249,7 @@ class Actor(nn.Module):
         return self(state).cpu().data.numpy().flatten()
 
 
-class BC:  # noqa
+class BC:
     def __init__(
         self,
         max_action: np.ndarray,
@@ -390,10 +389,13 @@ def train(config: TrainConfig):
                 f"{eval_score:.3f} , D4RL score: {normalized_eval_score:.3f}"
             )
             print("---------------------------------------")
-            torch.save(
-                trainer.state_dict(),
-                os.path.join(config.checkpoints_path, f"checkpoint_{t}.pt"),
-            )
+
+            if config.checkpoints_path is not None:
+                torch.save(
+                    trainer.state_dict(),
+                    os.path.join(config.checkpoints_path, f"checkpoint_{t}.pt"),
+                )
+
             wandb.log(
                 {"d4rl_normalized_score": normalized_eval_score},
                 step=trainer.total_it,
