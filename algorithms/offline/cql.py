@@ -1,23 +1,22 @@
 # source: https://github.com/young-geng/CQL/tree/934b0e8354ca431d6c083c4e3a29df88d4b0a24d
-# STRONG UNDER-PERFORMANCE ON PART OF ANTMAZE TASKS. BUT IN IQL PAPER IT WORKS SOMEHOW
 # https://arxiv.org/pdf/2006.04779.pdf
-from typing import Any, Dict, List, Optional, Tuple, Union
-from copy import deepcopy
-from dataclasses import asdict, dataclass
 import os
-from pathlib import Path
 import random
 import uuid
+from copy import deepcopy
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import d4rl
 import gym
 import numpy as np
 import pyrallis
 import torch
-from torch.distributions import Normal, TanhTransform, TransformedDistribution
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
+from torch.distributions import Normal, TanhTransform, TransformedDistribution
 
 TensorBatch = List[torch.Tensor]
 
@@ -33,6 +32,7 @@ class TrainConfig:
     max_timesteps: int = int(1e6)  # Max time steps to run environment
     checkpoints_path: Optional[str] = None  # Save path
     load_model: str = ""  # Model load file name, "" doesn't load
+
     # CQL
     buffer_size: int = 2_000_000  # Replay buffer size
     batch_size: int = 256  # Batch size for all networks
@@ -43,20 +43,29 @@ class TrainConfig:
     policy_lr: float = 3e-5  # Policy learning rate
     qf_lr: float = 3e-4  # Critics learning rate
     soft_target_update_rate: float = 5e-3  # Target network update rate
-    bc_steps: int = int(0)  # Number of BC steps at start
     target_update_period: int = 1  # Frequency of target nets updates
     cql_n_actions: int = 10  # Number of sampled actions
     cql_importance_sample: bool = True  # Use importance sampling
     cql_lagrange: bool = False  # Use Lagrange version of CQL
     cql_target_action_gap: float = -1.0  # Action gap
     cql_temp: float = 1.0  # CQL temperature
-    cql_min_q_weight: float = 10.0  # Minimal Q weight
+    cql_alpha: float = 10.0  # Minimal Q weight
     cql_max_target_backup: bool = False  # Use max target backup
     cql_clip_diff_min: float = -np.inf  # Q-function lower loss clipping
     cql_clip_diff_max: float = np.inf  # Q-function upper loss clipping
     orthogonal_init: bool = True  # Orthogonal initialization
     normalize: bool = True  # Normalize states
     normalize_reward: bool = False  # Normalize reward
+    q_n_hidden_layers: int = 3  # Number of hidden layers in Q networks
+    reward_scale: float = 1.0  # Reward scale for normalization
+    reward_bias: float = 0.0  # Reward bias for normalization
+
+    # AntMaze hacks
+    bc_steps: int = int(0)  # Number of BC steps at start
+    reward_scale: float = 5.0
+    reward_bias: float = -1.0
+    policy_log_std_multiplier: float = 1.0
+
     # Wandb logging
     project: str = "CORL"
     group: str = "CQL-D4RL"
@@ -211,7 +220,7 @@ def eval_actor(
     return np.asarray(episode_rewards)
 
 
-def return_reward_range(dataset, max_episode_steps):
+def return_reward_range(dataset: Dict, max_episode_steps: int) -> Tuple[float, float]:
     returns, lengths = [], []
     ep_ret, ep_len = 0.0, 0
     for r, d in zip(dataset["rewards"], dataset["terminals"]):
@@ -226,26 +235,40 @@ def return_reward_range(dataset, max_episode_steps):
     return min(returns), max(returns)
 
 
-def modify_reward(dataset, env_name, max_episode_steps=1000):
+def modify_reward(
+    dataset: Dict,
+    env_name: str,
+    max_episode_steps: int = 1000,
+    reward_scale: float = 1.0,
+    reward_bias: float = 0.0,
+):
     if any(s in env_name for s in ("halfcheetah", "hopper", "walker2d")):
         min_ret, max_ret = return_reward_range(dataset, max_episode_steps)
         dataset["rewards"] /= max_ret - min_ret
         dataset["rewards"] *= max_episode_steps
-    elif "antmaze" in env_name:
-        dataset["rewards"] -= 1.0
+    dataset["rewards"] = dataset["rewards"] * reward_scale + reward_bias
 
 
 def extend_and_repeat(tensor: torch.Tensor, dim: int, repeat: int) -> torch.Tensor:
     return tensor.unsqueeze(dim).repeat_interleave(repeat, dim=dim)
 
 
-def init_module_weights(module: torch.nn.Module, orthogonal_init: bool = False):
-    if isinstance(module, nn.Linear):
-        if orthogonal_init:
-            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            nn.init.constant_(module.bias, 0.0)
-        else:
-            nn.init.xavier_uniform_(module.weight, gain=1e-2)
+def init_module_weights(module: torch.nn.Sequential, orthogonal_init: bool = False):
+    # Specific orthgonal initialization for inner layers
+    # If orthogonal init is off, we do not change default initialization
+    if orthogonal_init:
+        for submodule in module[:-1]:
+            if isinstance(submodule, nn.Linear):
+                nn.init.orthogonal_(submodule.weight, gain=np.sqrt(2))
+                nn.init.constant_(submodule.bias, 0.0)
+
+    # Lasy layers should be initialzied differently as well
+    if orthogonal_init:
+        nn.init.orthogonal_(module[-1].weight, gain=1e-2)
+    else:
+        nn.init.xavier_uniform_(module[-1].weight, gain=1e-2)
+
+    nn.init.constant_(module[-1].bias, 0.0)
 
 
 class ReparameterizedTanhGaussian(nn.Module):
@@ -321,10 +344,7 @@ class TanhGaussianPolicy(nn.Module):
             nn.Linear(256, 2 * action_dim),
         )
 
-        if orthogonal_init:
-            self.base_network.apply(lambda m: init_module_weights(m, True))
-        else:
-            init_module_weights(self.base_network[-1], False)
+        init_module_weights(self.base_network)
 
         self.log_std_multiplier = Scalar(log_std_multiplier)
         self.log_std_offset = Scalar(log_std_offset)
@@ -338,7 +358,8 @@ class TanhGaussianPolicy(nn.Module):
         base_network_output = self.base_network(observations)
         mean, log_std = torch.split(base_network_output, self.action_dim, dim=-1)
         log_std = self.log_std_multiplier() * log_std + self.log_std_offset()
-        return self.tanh_gaussian.log_prob(mean, log_std, actions)
+        _, log_probs = self.tanh_gaussian(mean, log_std, False)
+        return log_probs
 
     def forward(
         self,
@@ -368,25 +389,25 @@ class FullyConnectedQFunction(nn.Module):
         observation_dim: int,
         action_dim: int,
         orthogonal_init: bool = False,
+        n_hidden_layers: int = 3,
     ):
         super().__init__()
         self.observation_dim = observation_dim
         self.action_dim = action_dim
         self.orthogonal_init = orthogonal_init
 
-        self.network = nn.Sequential(
+        layers = [
             nn.Linear(observation_dim + action_dim, 256),
             nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1),
-        )
-        if orthogonal_init:
-            self.network.apply(lambda m: init_module_weights(m, True))
-        else:
-            init_module_weights(self.network[-1], False)
+        ]
+        for _ in range(n_hidden_layers - 1):
+            layers.append(nn.Linear(256, 256))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(256, 1))
+
+        self.network = nn.Sequential(*layers)
+
+        init_module_weights(self.network, orthogonal_init)
 
     def forward(self, observations: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
         multiple_actions = False
@@ -437,7 +458,7 @@ class ContinuousCQL:
         cql_lagrange: bool = False,
         cql_target_action_gap: float = -1.0,
         cql_temp: float = 1.0,
-        cql_min_q_weight: float = 5.0,
+        cql_alpha: float = 5.0,
         cql_max_target_backup: bool = False,
         cql_clip_diff_min: float = -np.inf,
         cql_clip_diff_max: float = np.inf,
@@ -460,7 +481,7 @@ class ContinuousCQL:
         self.cql_lagrange = cql_lagrange
         self.cql_target_action_gap = cql_target_action_gap
         self.cql_temp = cql_temp
-        self.cql_min_q_weight = cql_min_q_weight
+        self.cql_alpha = cql_alpha
         self.cql_max_target_backup = cql_max_target_backup
         self.cql_clip_diff_min = cql_clip_diff_min
         self.cql_clip_diff_max = cql_clip_diff_max
@@ -532,8 +553,15 @@ class ContinuousCQL:
         return policy_loss
 
     def _q_loss(
-        self, observations, actions, next_observations, rewards, dones, alpha, log_dict
-    ):
+        self,
+        observations: torch.Tensor,
+        actions: torch.Tensor,
+        next_observations: torch.Tensor,
+        rewards: torch.Tensor,
+        dones: torch.Tensor,
+        alpha: torch.Tensor,
+        log_dict: Dict,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         q1_predicted = self.critic_1(observations, actions)
         q2_predicted = self.critic_2(observations, actions)
 
@@ -562,7 +590,7 @@ class ContinuousCQL:
             target_q_values = target_q_values - alpha * next_log_pi
 
         target_q_values = target_q_values.unsqueeze(-1)
-        td_target = rewards + (1.0 - dones) * self.discount * target_q_values
+        td_target = rewards + (1.0 - dones) * self.discount * target_q_values.detach()
         td_target = td_target.squeeze(-1)
         qf1_loss = F.mse_loss(q1_predicted, td_target.detach())
         qf2_loss = F.mse_loss(q2_predicted, td_target.detach())
@@ -655,14 +683,14 @@ class ContinuousCQL:
                 torch.exp(self.log_alpha_prime()), min=0.0, max=1000000.0
             )
             cql_min_qf1_loss = (
-                alpha_prime  # noqa
-                * self.cql_min_q_weight  # noqa
-                * (cql_qf1_diff - self.cql_target_action_gap)  # noqa
+                alpha_prime
+                * self.cql_alpha
+                * (cql_qf1_diff - self.cql_target_action_gap)
             )
             cql_min_qf2_loss = (
-                alpha_prime  # noqa
-                * self.cql_min_q_weight  # noqa
-                * (cql_qf2_diff - self.cql_target_action_gap)  # noqa
+                alpha_prime
+                * self.cql_alpha
+                * (cql_qf2_diff - self.cql_target_action_gap)
             )
 
             self.alpha_prime_optimizer.zero_grad()
@@ -670,8 +698,8 @@ class ContinuousCQL:
             alpha_prime_loss.backward(retain_graph=True)
             self.alpha_prime_optimizer.step()
         else:
-            cql_min_qf1_loss = cql_qf1_diff * self.cql_min_q_weight
-            cql_min_qf2_loss = cql_qf2_diff * self.cql_min_q_weight
+            cql_min_qf1_loss = cql_qf1_diff * self.cql_alpha
+            cql_min_qf2_loss = cql_qf2_diff * self.cql_alpha
             alpha_prime_loss = observations.new_tensor(0.0)
             alpha_prime = observations.new_tensor(0.0)
 
@@ -815,7 +843,12 @@ def train(config: TrainConfig):
     dataset = d4rl.qlearning_dataset(env)
 
     if config.normalize_reward:
-        modify_reward(dataset, config.env)
+        modify_reward(
+            dataset,
+            config.env,
+            reward_scale=config.reward_scale,
+            reward_bias=config.reward_bias,
+        )
 
     if config.normalize:
         state_mean, state_std = compute_mean_std(dataset["observations"], eps=1e-3)
@@ -849,9 +882,12 @@ def train(config: TrainConfig):
     seed = config.seed
     set_seed(seed, env)
 
-    critic_1 = FullyConnectedQFunction(state_dim, action_dim, config.orthogonal_init).to(
-        config.device
-    )
+    critic_1 = FullyConnectedQFunction(
+        state_dim,
+        action_dim,
+        config.orthogonal_init,
+        config.q_n_hidden_layers,
+    ).to(config.device)
     critic_2 = FullyConnectedQFunction(state_dim, action_dim, config.orthogonal_init).to(
         config.device
     )
@@ -859,7 +895,11 @@ def train(config: TrainConfig):
     critic_2_optimizer = torch.optim.Adam(list(critic_2.parameters()), config.qf_lr)
 
     actor = TanhGaussianPolicy(
-        state_dim, action_dim, max_action, orthogonal_init=config.orthogonal_init
+        state_dim,
+        action_dim,
+        max_action,
+        log_std_multiplier=config.policy_log_std_multiplier,
+        orthogonal_init=config.orthogonal_init,
     ).to(config.device)
     actor_optimizer = torch.optim.Adam(actor.parameters(), config.policy_lr)
 
@@ -887,7 +927,7 @@ def train(config: TrainConfig):
         "cql_lagrange": config.cql_lagrange,
         "cql_target_action_gap": config.cql_target_action_gap,
         "cql_temp": config.cql_temp,
-        "cql_min_q_weight": config.cql_min_q_weight,
+        "cql_alpha": config.cql_alpha,
         "cql_max_target_backup": config.cql_max_target_backup,
         "cql_clip_diff_min": config.cql_clip_diff_min,
         "cql_clip_diff_max": config.cql_clip_diff_max,

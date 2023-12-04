@@ -1,9 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
-from copy import deepcopy
-from dataclasses import asdict, dataclass
 import os
 import random
 import uuid
+from copy import deepcopy
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import d4rl
 import gym
@@ -12,8 +12,8 @@ import pyrallis
 import torch
 import torch.nn as nn
 import torch.nn.functional
-from tqdm import trange
 import wandb
+from tqdm import trange
 
 TensorBatch = List[torch.Tensor]
 
@@ -468,7 +468,7 @@ def train(config: TrainConfig):
             if hasattr(env, "get_normalized_score"):
                 normalized_eval_scores = env.get_normalized_score(eval_scores) * 100.0
                 wandb.log(
-                    {"normalized_eval_score": normalized_eval_scores.mean()}, step=t
+                    {"d4rl_normalized_score": normalized_eval_scores.mean()}, step=t
                 )
 
             if config.checkpoints_path is not None:
